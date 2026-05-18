@@ -297,14 +297,41 @@ export default function ClipEditor() {
                 🔄 Trocar vídeo
               </button>
               {videoSrc.startsWith('blob:') && (
-                <a 
-                  href={videoSrc} 
-                  download={video.name.endsWith('.mp4') ? video.name : `${video.name}.mp4`}
+                <button 
+                  onClick={async () => {
+                    const safeName = (video?.name || 'video_original').endsWith('.mp4') 
+                      ? (video?.name || 'video_original') 
+                      : `${video?.name || 'video_original'}.mp4`;
+
+                    // No mobile, tentar usar o Share nativo (Salvar na galeria)
+                    if (navigator.share && video?.file) {
+                      try {
+                        const fileToShare = new File([video.file], safeName, { type: 'video/mp4' });
+                        if (navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
+                          await navigator.share({
+                            files: [fileToShare],
+                            title: 'Salvar Vídeo'
+                          });
+                          return;
+                        }
+                      } catch (err) {
+                        console.log('Share API abortada ou não suportada, tentando fallback...');
+                      }
+                    }
+
+                    // Fallback normal de download (PC/Android)
+                    const a = document.createElement('a');
+                    a.href = videoSrc;
+                    a.download = safeName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }}
                   className="btn-primary"
-                  style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   ⬇️ Salvar Vídeo Original
-                </a>
+                </button>
               )}
             </div>
           </div>
