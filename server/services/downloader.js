@@ -14,11 +14,11 @@ const extraPaths = isWindows ? `C:\\Program Files\\Deno` : '/usr/local/bin';
 process.env.PATH = `${denoPath}${sep}${extraPaths}${sep}${originalPath}`;
 
 // Cobalt API instances (fallback chain)
+// Cobalt API — self-hosted via COBALT_API_URL env var, or public fallbacks
 const COBALT_INSTANCES = [
+  process.env.COBALT_API_URL,
   'https://api.cobalt.tools',
-  'https://cobalt-api.kwiatekmiki.com',
-  'https://cobalt.canine.tools',
-];
+].filter(Boolean);
 
 // Platform detection
 function detectPlatform(url) {
