@@ -156,6 +156,7 @@ const BASE_ARGS = [
   '--no-playlist',
   '--no-warnings',
   '--no-check-certificates',
+  '--extractor-args', 'youtube:player_client=android',
 ];
 
 function getVideoInfo(url) {
