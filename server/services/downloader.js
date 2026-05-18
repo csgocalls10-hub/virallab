@@ -33,31 +33,41 @@ function detectPlatform(url) {
 async function downloadWithCobalt(url) {
   const id = randomUUID();
   const tmpFile = path.join(os.tmpdir(), `virallab_${id}.mp4`);
+  const isYoutube = /youtube\.com|youtu\.be/i.test(url);
+
+  // Try different configs: normal first, then HLS for YouTube
+  const configs = [
+    { videoQuality: '720', youtubeVideoCodec: 'h264', youtubeHLS: false },
+    ...(isYoutube ? [{ videoQuality: '720', youtubeVideoCodec: 'h264', youtubeHLS: true }] : []),
+  ];
 
   for (const instance of COBALT_INSTANCES) {
-    try {
-      console.log(`    🌐 Cobalt: tentando ${instance}...`);
+    for (const config of configs) {
+      try {
+        console.log(`    🌐 Cobalt: ${instance} (HLS: ${config.youtubeHLS || false})...`);
 
-      const res = await fetch(`${instance}/`, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url,
-          videoQuality: '720',
-          youtubeVideoCodec: 'h264',
-          allowH265: false,
-          filenameStyle: 'basic',
-        }),
-        signal: AbortSignal.timeout(30000),
-      });
+        const res = await fetch(`${instance}/`, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url,
+            ...config,
+            allowH265: false,
+            filenameStyle: 'basic',
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        console.log(`    ⚠️ Cobalt ${res.status}: ${text.slice(0, 100)}`);
-        continue;
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          console.log(`    ⚠️ Cobalt ${res.status}: ${text.slice(0, 200)}`);
+          // If youtube.login error, try next config (HLS)
+          if (text.includes('youtube.login') || text.includes('youtube.token')) continue;
+          // For other errors, try next instance
+          continue;
       }
 
       const data = await res.json();
@@ -134,7 +144,8 @@ async function downloadWithCobalt(url) {
       console.log(`    ⚠️ Cobalt ${instance} falhou: ${e.message?.slice(0, 80)}`);
       continue;
     }
-  }
+    } // end configs loop
+  } // end instances loop
 
   throw new Error('COBALT_FAILED');
 }
@@ -269,6 +280,92 @@ function cleanError(msg) {
   return lines.length > 0 ? lines[0].replace(/^ERROR:\s*(\[[\w]+\]\s*\w+:\s*)?/, '').trim() : msg.slice(0, 200);
 }
 
+// ===== INVIDIOUS PROXY (YouTube fallback) =====
+const INVIDIOUS_INSTANCES = [
+  'https://inv.thepixora.com',
+];
+
+async function downloadWithInvidious(url) {
+  // Extract video ID
+  const match = url.match(/(?:v=|youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  if (!match) throw new Error('INVIDIOUS: ID do vídeo não encontrado');
+  const videoId = match[1];
+
+  for (const instance of INVIDIOUS_INSTANCES) {
+    try {
+      console.log(`    🔮 Invidious: ${instance}...`);
+
+      const infoRes = await fetch(`${instance}/api/v1/videos/${videoId}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!infoRes.ok) {
+        console.log(`    ⚠️ Invidious info ${infoRes.status}`);
+        continue;
+      }
+
+      const info = await infoRes.json();
+
+      // Find best mp4 stream <= 720p
+      const streams = (info.formatStreams || [])
+        .filter(s => s.container === 'mp4' && s.type?.includes('video'))
+        .sort((a, b) => {
+          const hA = parseInt(a.resolution) || 0;
+          const hB = parseInt(b.resolution) || 0;
+          return hB - hA;
+        });
+
+      const best = streams.find(s => (parseInt(s.resolution) || 999) <= 720) || streams[0];
+
+      if (!best?.url) {
+        console.log('    ⚠️ Invidious: no stream URL');
+        continue;
+      }
+
+      console.log(`    ⬇️ Invidious: ${best.resolution || '?'}p, downloading...`);
+
+      const fileRes = await fetch(best.url, {
+        signal: AbortSignal.timeout(120000),
+      });
+
+      if (!fileRes.ok) {
+        console.log(`    ⚠️ Invidious download ${fileRes.status}`);
+        continue;
+      }
+
+      const id = randomUUID();
+      const tmpFile = path.join(os.tmpdir(), `virallab_${id}.mp4`);
+      const buffer = Buffer.from(await fileRes.arrayBuffer());
+
+      if (buffer.length < 1000) {
+        console.log(`    ⚠️ Invidious: arquivo muito pequeno`);
+        continue;
+      }
+
+      fs.writeFileSync(tmpFile, buffer);
+      console.log(`    ✅ Invidious: ${(buffer.length / 1024 / 1024).toFixed(1)}MB`);
+
+      const stats = fs.statSync(tmpFile);
+      const title = sanitizeFilename(info.title || 'video');
+
+      return {
+        filePath: tmpFile,
+        filename: `${title}.mp4`,
+        title: info.title || 'Vídeo',
+        duration: info.lengthSeconds || 0,
+        size: stats.size,
+        platform: 'youtube',
+      };
+
+    } catch (e) {
+      console.log(`    ⚠️ Invidious falhou: ${e.message?.slice(0, 80)}`);
+      continue;
+    }
+  }
+
+  throw new Error('INVIDIOUS_FAILED');
+}
+
 // ===== MAIN EXPORT =====
 export { detectPlatform };
 
@@ -276,7 +373,7 @@ export async function downloadVideo(url) {
   const platform = detectPlatform(url);
   if (!platform) throw new Error('URL não reconhecida. Use links do YouTube, TikTok ou Instagram.');
 
-  // Strategy: Cobalt first (works on servers), yt-dlp as fallback (works locally)
+  // Strategy: Cobalt → Invidious (YouTube only) → yt-dlp
   try {
     console.log(`  🎯 Método 1: Cobalt API`);
     return await downloadWithCobalt(url);
@@ -284,8 +381,18 @@ export async function downloadVideo(url) {
     console.log(`  ⚠️ Cobalt falhou: ${e.message?.slice(0, 80)}`);
   }
 
+  // Invidious only works for YouTube
+  if (platform === 'youtube') {
+    try {
+      console.log(`  🎯 Método 2: Invidious Proxy`);
+      return await downloadWithInvidious(url);
+    } catch (e) {
+      console.log(`  ⚠️ Invidious falhou: ${e.message?.slice(0, 80)}`);
+    }
+  }
+
   try {
-    console.log(`  🎯 Método 2: yt-dlp`);
+    console.log(`  🎯 Método 3: yt-dlp`);
     return await downloadWithYtDlp(url);
   } catch (e) {
     console.log(`  ❌ yt-dlp falhou: ${e.message?.slice(0, 80)}`);
@@ -298,3 +405,4 @@ export function cleanupTempFile(filePath) {
   try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); }
   catch (e) { console.error('Cleanup error:', e.message); }
 }
+
