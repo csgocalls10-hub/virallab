@@ -297,10 +297,9 @@ export default function ClipEditor() {
               <button className="btn-secondary change-video-btn" onClick={resetEditor}>
                 🔄 Trocar vídeo
               </button>
-              {videoSrc.startsWith('blob:') && (
+              {videoUrl && (
                 <a 
-                  href={videoSrc} 
-                  download={`video_${Date.now()}.mp4`}
+                  href={`${API_URL}/api/download-direct?url=${encodeURIComponent(videoUrl)}`}
                   className="btn-primary"
                   style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >

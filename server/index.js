@@ -102,6 +102,33 @@ app.post('/api/download-video', async (req, res) => {
   }
 });
 
+// Direct Download (forces browser native download dialog without blob)
+app.get('/api/download-direct', async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url) return res.status(400).send('URL é obrigatória');
+
+    const platform = detectPlatform(url);
+    if (!platform) return res.status(400).send('URL não reconhecida.');
+
+    console.log(`  ⬇️ Download Direto de ${platform}: ${url}`);
+    const result = await downloadVideo(url);
+    
+    // Force attachment download
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.filename)}"`);
+    res.setHeader('Content-Length', result.size);
+
+    const readStream = fs.createReadStream(result.filePath);
+    readStream.pipe(res);
+    readStream.on('end', () => cleanupTempFile(result.filePath));
+    readStream.on('error', () => cleanupTempFile(result.filePath));
+  } catch (e) {
+    console.error('Direct download error:', e.message);
+    res.status(400).send(e.message);
+  }
+});
+
 // ====== Production: serve React frontend ======
 import path from 'path';
 import { fileURLToPath } from 'url';
