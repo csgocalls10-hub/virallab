@@ -34,7 +34,7 @@ ENV DENO_INSTALL="/root/.deno"
 ENV PATH="${DENO_INSTALL}/bin:${PATH}"
 
 # Download yt-dlp EJS components
-RUN yt-dlp --remote-components ejs:github --version || true
+RUN yt-dlp --remote-components ejs:github --version 2>/dev/null || true
 
 WORKDIR /app
 
@@ -52,8 +52,8 @@ COPY --from=builder /app/dist ./dist
 EXPOSE 3001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:3001/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
+    CMD curl -f http://localhost:${PORT:-3001}/api/health || exit 1
 
 # Start server
 CMD ["node", "server/index.js"]

@@ -4,12 +4,14 @@ import path from 'path';
 import os from 'os';
 import { randomUUID } from 'crypto';
 
-// Ensure deno is on PATH
+// Ensure deno is on PATH (cross-platform)
 const originalPath = process.env.PATH || '';
 const userHome = os.homedir();
 const denoPath = path.join(userHome, '.deno', 'bin');
-const programFiles = 'C:\\Program Files\\Deno';
-process.env.PATH = `${denoPath};${programFiles};${originalPath}`;
+const isWindows = os.platform() === 'win32';
+const sep = isWindows ? ';' : ':';
+const extraPaths = isWindows ? `C:\\Program Files\\Deno` : '/usr/local/bin';
+process.env.PATH = `${denoPath}${sep}${extraPaths}${sep}${originalPath}`;
 
 // Platform detection
 function detectPlatform(url) {
