@@ -13,6 +13,13 @@ const sep = isWindows ? ';' : ':';
 const extraPaths = isWindows ? `C:\\Program Files\\Deno` : '/usr/local/bin';
 process.env.PATH = `${denoPath}${sep}${extraPaths}${sep}${originalPath}`;
 
+// Cobalt API instances (fallback chain)
+const COBALT_INSTANCES = [
+  'https://api.cobalt.tools',
+  'https://cobalt-api.kwiatekmiki.com',
+  'https://cobalt.canine.tools',
+];
+
 // Platform detection
 function detectPlatform(url) {
   if (!url) return null;
@@ -22,7 +29,117 @@ function detectPlatform(url) {
   return 'other';
 }
 
-// Common yt-dlp args
+// ===== COBALT API DOWNLOAD =====
+async function downloadWithCobalt(url) {
+  const id = randomUUID();
+  const tmpFile = path.join(os.tmpdir(), `virallab_${id}.mp4`);
+
+  for (const instance of COBALT_INSTANCES) {
+    try {
+      console.log(`    🌐 Cobalt: tentando ${instance}...`);
+
+      const res = await fetch(`${instance}/`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          videoQuality: '720',
+          youtubeVideoCodec: 'h264',
+          allowH265: false,
+          filenameStyle: 'basic',
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.log(`    ⚠️ Cobalt ${res.status}: ${text.slice(0, 100)}`);
+        continue;
+      }
+
+      const data = await res.json();
+      console.log(`    📦 Cobalt status: ${data.status}`);
+
+      if (data.status === 'error') {
+        console.log(`    ❌ Cobalt error: ${data.error?.code || 'unknown'}`);
+        continue;
+      }
+
+      // Get the download URL
+      let downloadUrl = null;
+      let filename = 'video.mp4';
+
+      if (data.status === 'tunnel' || data.status === 'redirect') {
+        downloadUrl = data.url;
+        filename = data.filename || filename;
+      } else if (data.status === 'picker' && data.picker?.length > 0) {
+        // Pick the first video
+        const videoItem = data.picker.find(p => p.type === 'video') || data.picker[0];
+        downloadUrl = videoItem.url;
+      } else if (data.status === 'local-processing' && data.tunnel?.length > 0) {
+        downloadUrl = data.tunnel[0];
+        filename = data.output?.filename || filename;
+      }
+
+      if (!downloadUrl) {
+        console.log('    ⚠️ Cobalt: no download URL in response');
+        continue;
+      }
+
+      // Download the file
+      console.log(`    ⬇️ Cobalt: baixando arquivo...`);
+      const fileRes = await fetch(downloadUrl, {
+        signal: AbortSignal.timeout(120000),
+      });
+
+      if (!fileRes.ok) {
+        console.log(`    ⚠️ Cobalt download failed: ${fileRes.status}`);
+        continue;
+      }
+
+      const buffer = Buffer.from(await fileRes.arrayBuffer());
+
+      if (buffer.length < 1000) {
+        console.log(`    ⚠️ Cobalt: arquivo muito pequeno (${buffer.length} bytes)`);
+        continue;
+      }
+
+      fs.writeFileSync(tmpFile, buffer);
+      console.log(`    ✅ Cobalt: ${(buffer.length / 1024 / 1024).toFixed(1)}MB baixados`);
+
+      // Check codec and re-encode if needed
+      const codec = await checkCodec(tmpFile);
+      let finalFile = tmpFile;
+      if (codec !== 'h264' && codec !== 'unknown') {
+        console.log(`    📋 Codec: ${codec} → convertendo para H.264`);
+        finalFile = await reencodeToH264(tmpFile);
+      }
+
+      const stats = fs.statSync(finalFile);
+      const safeName = sanitizeFilename(filename);
+
+      return {
+        filePath: finalFile,
+        filename: safeName.endsWith('.mp4') ? safeName : `${safeName}.mp4`,
+        title: safeName.replace(/\.mp4$/i, ''),
+        duration: 0, // Cobalt doesn't return duration
+        size: stats.size,
+        platform: detectPlatform(url),
+      };
+
+    } catch (e) {
+      console.log(`    ⚠️ Cobalt ${instance} falhou: ${e.message?.slice(0, 80)}`);
+      continue;
+    }
+  }
+
+  throw new Error('COBALT_FAILED');
+}
+
+// ===== YT-DLP DOWNLOAD (fallback) =====
 const BASE_ARGS = [
   '--remote-components', 'ejs:github',
   '--no-playlist',
@@ -30,91 +147,23 @@ const BASE_ARGS = [
   '--no-check-certificates',
 ];
 
-// Get video info via yt-dlp
 function getVideoInfo(url) {
   return new Promise((resolve, reject) => {
-    const args = [...BASE_ARGS, '--dump-json', url];
-    execFile('yt-dlp', args, { maxBuffer: 10 * 1024 * 1024, timeout: 60000 }, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(cleanError(stderr || error.message)));
-        return;
+    execFile('yt-dlp', [...BASE_ARGS, '--dump-json', url],
+      { maxBuffer: 10 * 1024 * 1024, timeout: 60000 },
+      (error, stdout, stderr) => {
+        if (error) { reject(new Error(cleanError(stderr || error.message))); return; }
+        try { resolve(JSON.parse(stdout)); }
+        catch (e) { reject(new Error('Erro ao processar info')); }
       }
-      try {
-        resolve(JSON.parse(stdout));
-      } catch (e) {
-        reject(new Error('Erro ao processar informações do vídeo'));
-      }
-    });
+    );
   });
 }
 
-// Check if file needs re-encoding (HEVC -> H.264)
-function checkCodec(filePath) {
-  return new Promise((resolve) => {
-    execFile('ffprobe', [
-      '-v', 'error',
-      '-select_streams', 'v:0',
-      '-show_entries', 'stream=codec_name',
-      '-of', 'csv=p=0',
-      filePath,
-    ], { timeout: 10000 }, (error, stdout) => {
-      if (error) {
-        resolve('unknown');
-        return;
-      }
-      resolve(stdout.trim().toLowerCase());
-    });
-  });
-}
-
-// Re-encode to H.264 if needed
-function reencodeToH264(inputPath) {
-  return new Promise((resolve, reject) => {
-    const outputPath = inputPath.replace('.mp4', '_h264.mp4');
-
-    console.log('    🔄 Re-encoding HEVC → H.264...');
-
-    execFile('ffmpeg', [
-      '-i', inputPath,
-      '-c:v', 'libx264',
-      '-preset', 'fast',
-      '-crf', '23',
-      '-c:a', 'aac',
-      '-b:a', '128k',
-      '-movflags', '+faststart',
-      '-y',
-      outputPath,
-    ], { timeout: 120000 }, (error, stdout, stderr) => {
-      if (error) {
-        console.error('    ❌ Re-encode error:', error.message?.slice(0, 100));
-        // Return original file if re-encode fails
-        resolve(inputPath);
-        return;
-      }
-
-      // Replace original with re-encoded
-      try {
-        fs.unlinkSync(inputPath);
-        fs.renameSync(outputPath, inputPath);
-        console.log('    ✅ Re-encode completo');
-      } catch (e) {
-        // If rename fails, use the new file
-        if (fs.existsSync(outputPath)) {
-          resolve(outputPath);
-          return;
-        }
-      }
-      resolve(inputPath);
-    });
-  });
-}
-
-// Download video via yt-dlp
 async function downloadWithYtDlp(url) {
   const id = randomUUID();
   const tmpFile = path.join(os.tmpdir(), `virallab_${id}.mp4`);
 
-  // Get info first
   let info;
   try {
     info = await getVideoInfo(url);
@@ -124,8 +173,7 @@ async function downloadWithYtDlp(url) {
     info = { title: 'video', duration: 0 };
   }
 
-  // Download - try H.264 first, fallback to any format
-  const downloaded = await new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     const args = [
       ...BASE_ARGS,
       '-f', 'bestvideo[height<=720][vcodec^=avc1]+bestaudio/best[height<=720][vcodec^=avc]/best[height<=720]/best',
@@ -135,46 +183,30 @@ async function downloadWithYtDlp(url) {
       url,
     ];
 
-    console.log(`    ⬇️ Downloading to: ${tmpFile}`);
-
+    console.log(`    ⬇️ yt-dlp downloading...`);
     execFile('yt-dlp', args, { maxBuffer: 50 * 1024 * 1024, timeout: 180000 }, (error, stdout, stderr) => {
-      if (error) {
-        fs.unlink(tmpFile, () => {});
-        reject(new Error(cleanError(stderr || error.message)));
-        return;
-      }
+      if (error) { fs.unlink(tmpFile, () => {}); reject(new Error(cleanError(stderr || error.message))); return; }
       resolve();
     });
   });
 
-  // Find the actual downloaded file
   let actualFile = findDownloadedFile(tmpFile);
+  if (!actualFile) throw new Error('yt-dlp: arquivo não encontrado');
 
-  if (!actualFile) {
-    throw new Error('Download falhou — arquivo não encontrado');
-  }
-
-  // Check codec and re-encode if HEVC
   const codec = await checkCodec(actualFile);
-  console.log(`    📋 Codec detectado: ${codec}`);
-
   if (codec !== 'h264' && codec !== 'unknown') {
     actualFile = await reencodeToH264(actualFile);
   }
 
-  // Validate file
   const stats = fs.statSync(actualFile);
-  if (stats.size < 1000) {
-    fs.unlink(actualFile, () => {});
-    throw new Error('Download falhou — arquivo vazio');
-  }
+  if (stats.size < 1000) { fs.unlink(actualFile, () => {}); throw new Error('yt-dlp: arquivo vazio'); }
 
   const title = info.title || 'video';
-  const safeName = title.replace(/[^\w\s\-\u00C0-\u024F]/g, '').trim().substring(0, 80);
+  const safeName = sanitizeFilename(title);
 
   return {
     filePath: actualFile,
-    filename: `${safeName || 'video'}.mp4`,
+    filename: `${safeName}.mp4`,
     title: info.title || 'Vídeo',
     duration: Math.floor(info.duration || 0),
     size: stats.size,
@@ -182,46 +214,87 @@ async function downloadWithYtDlp(url) {
   };
 }
 
+// ===== SHARED UTILS =====
+function checkCodec(filePath) {
+  return new Promise((resolve) => {
+    execFile('ffprobe', [
+      '-v', 'error', '-select_streams', 'v:0',
+      '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', filePath,
+    ], { timeout: 10000 }, (error, stdout) => {
+      resolve(error ? 'unknown' : stdout.trim().toLowerCase());
+    });
+  });
+}
+
+function reencodeToH264(inputPath) {
+  return new Promise((resolve) => {
+    const outputPath = inputPath.replace('.mp4', '_h264.mp4');
+    console.log('    🔄 Re-encoding → H.264...');
+
+    execFile('ffmpeg', [
+      '-i', inputPath, '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+      '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-y', outputPath,
+    ], { timeout: 120000 }, (error) => {
+      if (error) { console.error('    ❌ Re-encode error'); resolve(inputPath); return; }
+      try {
+        fs.unlinkSync(inputPath);
+        fs.renameSync(outputPath, inputPath);
+        console.log('    ✅ Re-encode completo');
+      } catch (e) {
+        if (fs.existsSync(outputPath)) { resolve(outputPath); return; }
+      }
+      resolve(inputPath);
+    });
+  });
+}
+
 function findDownloadedFile(tmpFile) {
   if (fs.existsSync(tmpFile)) return tmpFile;
-
   const dir = path.dirname(tmpFile);
   const baseName = path.basename(tmpFile, '.mp4');
   try {
-    const files = fs.readdirSync(dir);
-    const match = files.find(f => f.includes(baseName));
-    if (match) {
-      const fullPath = path.join(dir, match);
-      if (fs.existsSync(fullPath)) return fullPath;
-    }
+    const match = fs.readdirSync(dir).find(f => f.includes(baseName));
+    if (match) { const p = path.join(dir, match); if (fs.existsSync(p)) return p; }
   } catch (e) {}
-
   return null;
+}
+
+function sanitizeFilename(name) {
+  return (name || 'video').replace(/[^\w\s\-\u00C0-\u024F]/g, '').trim().substring(0, 80) || 'video';
 }
 
 function cleanError(msg) {
   if (!msg) return 'Erro desconhecido';
   const lines = msg.split('\n').filter(l => l.includes('ERROR'));
-  if (lines.length > 0) {
-    return lines[0].replace(/^ERROR:\s*(\[[\w]+\]\s*\w+:\s*)?/, '').trim();
-  }
-  return msg.slice(0, 200);
+  return lines.length > 0 ? lines[0].replace(/^ERROR:\s*(\[[\w]+\]\s*\w+:\s*)?/, '').trim() : msg.slice(0, 200);
 }
 
+// ===== MAIN EXPORT =====
 export { detectPlatform };
 
 export async function downloadVideo(url) {
   const platform = detectPlatform(url);
-  if (!platform) {
-    throw new Error('URL não reconhecida. Use links do YouTube, TikTok ou Instagram.');
+  if (!platform) throw new Error('URL não reconhecida. Use links do YouTube, TikTok ou Instagram.');
+
+  // Strategy: Cobalt first (works on servers), yt-dlp as fallback (works locally)
+  try {
+    console.log(`  🎯 Método 1: Cobalt API`);
+    return await downloadWithCobalt(url);
+  } catch (e) {
+    console.log(`  ⚠️ Cobalt falhou: ${e.message?.slice(0, 80)}`);
   }
-  return await downloadWithYtDlp(url);
+
+  try {
+    console.log(`  🎯 Método 2: yt-dlp`);
+    return await downloadWithYtDlp(url);
+  } catch (e) {
+    console.log(`  ❌ yt-dlp falhou: ${e.message?.slice(0, 80)}`);
+  }
+
+  throw new Error('Não foi possível baixar o vídeo. Tente novamente ou use outra URL.');
 }
 
 export function cleanupTempFile(filePath) {
-  try {
-    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch (e) {
-    console.error('Cleanup error:', e.message);
-  }
+  try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); }
+  catch (e) { console.error('Cleanup error:', e.message); }
 }
