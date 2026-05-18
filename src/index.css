@@ -1280,26 +1280,118 @@ textarea { resize: vertical; min-height: 80px; }
 
 /* ========== RESPONSIVE ========== */
 @media (max-width: 768px) {
+  /* Sidebar collapses */
   .sidebar { transform: translateX(-100%); }
   .sidebar.open { transform: translateX(0); }
   .sidebar-overlay.open { display: block; }
   .mobile-header { display: flex; }
-  .main-content { margin-left: 0; padding: 72px 16px 32px; }
-  .score-hero { flex-direction: column; text-align: center; padding: 24px; }
+
+  /* Main content takes full width */
+  .main-content { margin-left: 0; padding: 72px 14px 32px; }
+
+  /* Page header */
+  .page-header h2 { font-size: 24px; }
+  .page-header p { font-size: 13px; }
+
+  /* Grids stack */
+  .score-hero { flex-direction: column; text-align: center; padding: 20px; }
   .metrics-grid { grid-template-columns: 1fr; }
   .platforms-grid { grid-template-columns: 1fr; }
-  .input-url-wrapper { flex-direction: column; }
+  .preset-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  /* Input groups */
+  .input-group { margin-bottom: 12px; }
+  .input-group input, .input-group select, .input-group textarea {
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+  .input-url-wrapper { flex-direction: column; gap: 10px; }
+  .input-url-wrapper input { width: 100%; }
+  .input-url-wrapper .btn-fetch { width: 100%; justify-content: center; }
+
+  /* Mode tabs */
+  .mode-tabs { flex-direction: column; gap: 4px; }
+  .mode-tab { padding: 12px 16px; font-size: 14px; }
+
+  /* URL input card */
+  .url-input-card { padding: 20px; }
+  .supported-platforms { gap: 6px; }
+  .platform-badge { padding: 5px 10px; font-size: 11px; }
+
+  /* Video preview */
+  .video-preview-card { border-radius: var(--radius-md); }
+  .video-player { max-height: 250px; }
+  .video-info-bar { 
+    flex-wrap: wrap; 
+    gap: 6px; 
+    font-size: 11px;
+    padding: 10px 12px;
+  }
+  .video-info-bar span { font-size: 11px; }
+
+  /* Video preview in analyze page */
   .video-preview { flex-direction: column; }
   .video-preview img { width: 100%; height: 180px; }
-  .preset-grid { grid-template-columns: 1fr; }
-  .clip-suggestion-card { flex-direction: column; align-items: flex-start; }
-  .export-actions { flex-direction: column; }
+
+  /* AI suggestions */
+  .section-header-row { flex-direction: column; gap: 10px; align-items: flex-start; }
+  .clip-suggestions-list { gap: 8px; }
+  .clip-suggestion-card { 
+    flex-direction: column; 
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  /* Timeline */
   .timeline-header { flex-direction: column; gap: 8px; }
+  .timeline-container { padding: 16px; }
+
+  /* Platform presets */
+  .platform-presets { padding: 16px; }
+
+  /* Export */
+  .export-section { padding: 0; }
+  .export-actions { flex-direction: column; }
+  .export-btn { width: 100%; font-size: 16px; padding: 16px; }
+
+  /* Buttons */
+  .btn-primary, .btn-secondary { 
+    width: 100%; 
+    justify-content: center;
+    padding: 14px 20px;
+    font-size: 15px;
+  }
+  .btn-small { width: 100%; justify-content: center; }
+
+  /* Upload zone */
+  .upload-zone { padding: 40px 20px; min-height: 200px; }
+
+  /* Cards */
+  .card { padding: 16px; }
+  .platform-card { padding: 16px; }
+
+  /* Platform selector */
+  .platform-selector { flex-wrap: wrap; gap: 6px; }
+  .platform-chip { padding: 8px 14px; font-size: 13px; }
+
+  /* Analysis page */
+  .emotional-tags { gap: 6px; }
+  .elements-grid { grid-template-columns: 1fr; }
+
+  /* Download status */
+  .download-status { padding: 12px; font-size: 13px; }
+
+  /* Error message */
+  .error-msg { font-size: 13px; padding: 10px 14px; }
 }
 
 @media (max-width: 480px) {
-  .page-header h2 { font-size: 22px; }
-  .platform-selector { gap: 6px; }
-  .platform-chip { padding: 8px 14px; font-size: 12px; }
-  .upload-zone { padding: 40px 20px; }
+  .main-content { padding: 64px 10px 24px; }
+  .page-header h2 { font-size: 20px; }
+  .page-header p { font-size: 12px; }
+  .preset-grid { grid-template-columns: 1fr; }
+  .url-input-card { padding: 16px; }
+  .mode-tab { padding: 10px 12px; font-size: 13px; }
+  .video-player { max-height: 200px; }
 }
+
