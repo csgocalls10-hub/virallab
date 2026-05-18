@@ -292,9 +292,21 @@ export default function ClipEditor() {
               </div>
             </div>
 
-            <button className="btn-secondary change-video-btn" onClick={resetEditor}>
-              🔄 Trocar vídeo
-            </button>
+            <div className="video-actions-row" style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <button className="btn-secondary change-video-btn" onClick={resetEditor}>
+                🔄 Trocar vídeo
+              </button>
+              {videoSrc.startsWith('blob:') && (
+                <a 
+                  href={videoSrc} 
+                  download={video.name.endsWith('.mp4') ? video.name : `${video.name}.mp4`}
+                  className="btn-primary"
+                  style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  ⬇️ Salvar Vídeo Original
+                </a>
+              )}
+            </div>
           </div>
 
           {/* AI Clip Suggestions */}
