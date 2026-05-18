@@ -65,7 +65,7 @@ export default function ClipEditor() {
       const videoPlatform = res.headers.get('X-Video-Platform') || '';
 
       const file = new File([blob], filename, { type: 'video/mp4' });
-      const src = URL.createObjectURL(blob);
+      const src = URL.createObjectURL(file);
 
       // Get actual video dimensions
       const videoEl = document.createElement('video');
