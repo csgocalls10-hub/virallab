@@ -399,6 +399,9 @@ export async function downloadVideo(url) {
     console.log(`  ❌ yt-dlp falhou: ${e.message?.slice(0, 80)}`);
   }
 
+  if (platform === 'youtube') {
+    throw new Error('O YouTube bloqueou o download por proteção anti-bot. Tente outro vídeo ou use links do TikTok/Instagram.');
+  }
   throw new Error('Não foi possível baixar o vídeo. Tente novamente ou use outra URL.');
 }
 
