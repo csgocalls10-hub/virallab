@@ -111,8 +111,11 @@ export default function useFFmpeg() {
 
       setStage('Finalizando...');
       const outputData = await ffmpeg.readFile('output.mp4');
-      const blob = new Blob([outputData.buffer], { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
+      const safeFilename = `clip_${platform.replace(/[\/\s]/g, '_')}_${Date.now()}.mp4`;
+      
+      // Use File instead of Blob to force Chrome to respect the download filename and MIME type
+      const fileObj = new File([outputData.buffer], safeFilename, { type: 'video/mp4' });
+      const url = URL.createObjectURL(fileObj);
 
       // Cleanup
       await ffmpeg.deleteFile('input.mp4');
@@ -121,7 +124,7 @@ export default function useFFmpeg() {
       setStage('Pronto!');
       setProgress(100);
 
-      return { url, blob, filename: `clip_${platform.replace(/[\/\s]/g, '_')}_${Date.now()}.mp4` };
+      return { url, blob: fileObj, filename: safeFilename };
     } catch (err) {
       console.error('FFmpeg process error:', err);
       setStage('Erro no processamento');
