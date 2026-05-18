@@ -298,41 +298,14 @@ export default function ClipEditor() {
                 🔄 Trocar vídeo
               </button>
               {videoSrc.startsWith('blob:') && (
-                <button 
-                  onClick={async () => {
-                    const safeName = (video?.name || 'video_original').endsWith('.mp4') 
-                      ? (video?.name || 'video_original') 
-                      : `${video?.name || 'video_original'}.mp4`;
-
-                    // No mobile, tentar usar o Share nativo (Salvar na galeria)
-                    if (navigator.share && video?.file) {
-                      try {
-                        const fileToShare = new File([video.file], safeName, { type: 'video/mp4' });
-                        if (navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
-                          await navigator.share({
-                            files: [fileToShare],
-                            title: 'Salvar Vídeo'
-                          });
-                          return;
-                        }
-                      } catch (err) {
-                        console.log('Share API abortada ou não suportada, tentando fallback...');
-                      }
-                    }
-
-                    // Fallback normal de download (PC/Android)
-                    const a = document.createElement('a');
-                    a.href = videoSrc;
-                    a.download = safeName;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                  }}
+                <a 
+                  href={videoSrc} 
+                  download={video.name && video.name.endsWith('.mp4') ? video.name : `video_${video.platform || 'original'}_${Date.now()}.mp4`}
                   className="btn-primary"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  ⬇️ Salvar Vídeo Original
-                </button>
+                  ⬇️ Baixar Vídeo Original
+                </a>
               )}
             </div>
           </div>
