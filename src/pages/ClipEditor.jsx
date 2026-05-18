@@ -300,7 +300,7 @@ export default function ClipEditor() {
               {videoSrc.startsWith('blob:') && (
                 <a 
                   href={videoSrc} 
-                  download={video.name && video.name.endsWith('.mp4') ? video.name : `video_${video.platform || 'original'}_${Date.now()}.mp4`}
+                  download={`video_${Date.now()}.mp4`}
                   className="btn-primary"
                   style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
