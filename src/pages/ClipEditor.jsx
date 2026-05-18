@@ -281,6 +281,7 @@ export default function ClipEditor() {
                 ref={videoRef}
                 src={videoSrc}
                 controls
+                controlsList="nodownload"
                 className="video-player"
               />
               <div className="video-info-bar">
